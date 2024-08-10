@@ -1,0 +1,31 @@
+{
+    "tasks": [
+        {
+            "label": "make",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "command": "make",
+            "args": ["-j8"],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "ninja",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "command": "ninja",
+            "args": ["-C", "build", "-j12"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ],
+    "version": "2.0.0"
+}
