@@ -9,7 +9,7 @@ project "HelloVulkan"
    targetdir "bin/%{cfg.buildcfg}"
    files { "src/**.hpp", "src/**.cpp"}
    
-   defines {"SPDLOG_COMPILED_LIB"}
+   defines {"SPDLOG_COMPILED_LIB", "GLFW_INCLUDE_VULKAN", "GLM_FORCE_RADIANS", "GLM_FORCE_DEPTH_ZERO_TO_ONE"}
    includedirs { "external/include", "E:\\VulkanSDK\\1.3.290.0\\Include" }
    libdirs { "external/lib", "E:\\VulkanSDK\\1.3.290.0\\Lib"}
    links {"vulkan-1.lib", "glfw3", "spdlog" }
