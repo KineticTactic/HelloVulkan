@@ -33,6 +33,7 @@ class App {
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	std::vector<VkImage> swapChainImages;
+	std::vector<VkImageView> swapChainImageViews;
 
   public:
 	App();
@@ -57,6 +58,8 @@ class App {
 	chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
 	void createSwapChain();
+
+	void createImageViews();
 
 	void cleanup();
 };
