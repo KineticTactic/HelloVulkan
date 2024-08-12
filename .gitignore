@@ -4,3 +4,4 @@ Makefile
 build/
 compile_commands.json
 .cache/
+bin/

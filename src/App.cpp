@@ -2,6 +2,7 @@
 #include "GLFW/glfw3.h"
 #include "Log.hpp"
 #include "vulkan/vulkan_core.h"
+#include <fstream>
 #include <stdexcept>
 #include <set>
 #include <limits>
@@ -16,13 +17,37 @@ const bool enableValidationLayers = true;
 #endif
 
 App::App() {
+	// 1. Initialize the window
 	initVulkan();
+	// 2. Create the Vulkan instance. This contains the information about the application as well as
+	//    the required extensions and validation layers.
 	createInstance();
+	// 3. Creates the window surface. This is the connection between the Vulkan instance and the
+	// 	  window system. It is handled by GLFW.
 	createSurface();
+	// 4. Select a physical device (GPU) that supports the features we need. It uses the function
+	// 	  isDeviceSuitable. isDeviceSuitable checks if the required queues (graphics and
+	//    presentation queues), extensions (swapchain) are available, and if the swapchain itself is
+	//    adequate.
 	pickPhysicalDevice();
+	// 5. Create the logical device. The logical device is the connection between the application
+	// 	  and the physical device. Here we specify the queues, features and validation layers we
+	//    want to use.
 	createLogicalDevice();
+	// 6. Create the swap chain. We have 3 functions, chooseSwapSurfaceFormat,
+	//    chooseSwapPresentMode, and chooseSwapExtent to choose the swapchain details we want from
+	//    the list of available choices.
+	//    After that we store the swapchain details and retrieve the swapchain images.
 	createSwapChain();
+	// 7. Create the image views. Image views specify how to access the image (in this case
+	//    swapchain images) and which part of the image to access.
 	createImageViews();
+	// 8. Create the Render pass. This tells vulkan about our framebuffer attachments, color and
+	// depth buffers, etc.
+	createRenderPass();
+	// 9. Create the graphics pipeline. This stores the complete sequence of operations that tell
+	// Vulkan how to go from a set of vertex data to the final output on the screen
+	createGraphicsPipeline();
 }
 
 App::~App() { cleanup(); }
@@ -33,12 +58,15 @@ void App::run() {
 	}
 }
 
+// Creates the GLFW window
 void App::initVulkan() {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Vulkan window", nullptr, nullptr);
+	LOG_INFO("[VULKAN]: Window created");
 }
 
+// Check if the requested validation layers are available. These are provided by LunarG
 bool App::checkValidationLayerSupport() {
 	uint32_t layerCount;
 	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -59,10 +87,12 @@ bool App::checkValidationLayerSupport() {
 	return true;
 }
 
+// Vulkan instance creation
 void App::createInstance() {
-	if (enableValidationLayers && !checkValidationLayerSupport()) {
+	if (enableValidationLayers && !checkValidationLayerSupport())
 		throw std::runtime_error("Validation layers requested, but not available!");
-	}
+
+	// (optional) basic information about our application
 	VkApplicationInfo appInfo{};
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pApplicationName = "Hello Triangle";
@@ -71,43 +101,54 @@ void App::createInstance() {
 	appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 	appInfo.apiVersion = VK_API_VERSION_1_0;
 
+	// Vulkan instance creation details
+	// Specifies which global extensions and validation layers we want to use
 	VkInstanceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	createInfo.pApplicationInfo = &appInfo;
 
+	// GLFW already has a function which returns a list of extensions it needs
 	uint32_t glfwExtensionCount = 0;
 	const char **glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 	createInfo.enabledExtensionCount = glfwExtensionCount;
 	createInfo.ppEnabledExtensionNames = glfwExtensions;
+
+	// Enable validation layers
 	if (enableValidationLayers) {
 		createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
 		createInfo.ppEnabledLayerNames = validationLayers.data();
-	} else {
+	} else
 		createInfo.enabledLayerCount = 0;
-	}
 
 	VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
 	if (result != VK_SUCCESS)
 		throw std::runtime_error("Failed to create instance");
+
 	LOG_INFO("[VULKAN]: Vulkan instance created");
 }
 
+// The window surface is the connection between the Vulkan instance and the window system.
 void App::createSurface() {
 	if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create window surface!");
 }
 
+// Select a physical device (GPU) that supports the features we need.
 void App::pickPhysicalDevice() {
 	physicalDevice = VK_NULL_HANDLE;
 
+	// This pattern of querying the number of devices and then querying the devices themselves is
+	// common in Vulkan.
 	uint32_t deviceCount = 0;
 	vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 	if (deviceCount == 0)
 		throw std::runtime_error("failed to find GPUs with Vulkan support!");
+	LOG_TRACE("[VULKAN]: Number of physical devices: {}", deviceCount);
 
 	std::vector<VkPhysicalDevice> devices(deviceCount);
 	vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
+	// Choose the first suitable device
 	for (const auto &device : devices) {
 		if (isDeviceSuitable(device)) {
 			physicalDevice = device;
@@ -115,16 +156,23 @@ void App::pickPhysicalDevice() {
 		}
 	}
 
-	if (physicalDevice == VK_NULL_HANDLE) {
+	if (physicalDevice == VK_NULL_HANDLE)
 		throw std::runtime_error("failed to find a suitable GPU!");
-	}
+
+	// Print the name of the GPU
+	VkPhysicalDeviceProperties deviceProperties;
+	vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+	LOG_INFO("[VULKAN]: Physical device selected");
+	LOG_TRACE("[VULKAN]: Physical device: {}", deviceProperties.deviceName);
 }
 
+// Check if the given physical device supports the required features.
 bool App::isDeviceSuitable(VkPhysicalDevice device) {
 	VkPhysicalDeviceProperties deviceProperties;
 	VkPhysicalDeviceFeatures deviceFeatures;
 	vkGetPhysicalDeviceProperties(device, &deviceProperties);
 	vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+	// Check if the device supports the required queue families, extensions, and swap chain
 	QueueFamilyIndices indices = findQueueFamilies(device);
 	bool extensionsSupported = checkDeviceExtensionSupport(device);
 	bool swapChainAdequate = false;
@@ -136,12 +184,12 @@ bool App::isDeviceSuitable(VkPhysicalDevice device) {
 	return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
+// Find the queue families supported.
 QueueFamilyIndices App::findQueueFamilies(VkPhysicalDevice device) {
 	QueueFamilyIndices indices;
 
 	uint32_t queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
 	std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
@@ -162,10 +210,10 @@ QueueFamilyIndices App::findQueueFamilies(VkPhysicalDevice device) {
 	return indices;
 }
 
+// Check if the device supports the required extensions (swap chain).
 bool App::checkDeviceExtensionSupport(VkPhysicalDevice device) {
 	uint32_t extensionCount;
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
-
 	std::vector<VkExtensionProperties> availableExtensions(extensionCount);
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount,
 										 availableExtensions.data());
@@ -177,10 +225,13 @@ bool App::checkDeviceExtensionSupport(VkPhysicalDevice device) {
 	return requiredExtensions.empty();
 }
 
+// Create the logical device. The logical device is the connection between the application and the
+// physical device.
 void App::createLogicalDevice() {
 	QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+	// The graphics and presentation queues might be the same. So we use a set to ensure uniqueness.
 	std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(),
 											  indices.presentFamily.value()};
 
@@ -221,6 +272,7 @@ void App::createLogicalDevice() {
 	vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
+// Query the swap chain support details.
 SwapChainSupportDetails App::querySwapChainSupport(VkPhysicalDevice device) {
 	SwapChainSupportDetails details;
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
@@ -330,6 +382,7 @@ void App::createSwapChain() {
 	QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 	uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
+	// Specify how the images will be used across multiple queue families.
 	// If the graphics and present queues are different, we use concurrent sharing mode.
 	// Otherwise, we use exclusive sharing mode.
 	if (indices.graphicsFamily != indices.presentFamily) {
@@ -352,10 +405,13 @@ void App::createSwapChain() {
 	if (result != VK_SUCCESS)
 		throw std::runtime_error("Failed to create swap chain");
 	LOG_INFO("[VULKAN]: Swap chain created");
+	LOG_TRACE("[VULKAN]: Swap chain image count: {}", imageCount);
 
+	// Store the swap chain format, and extent
 	swapChainImageFormat = surfaceFormat.format;
 	swapChainExtent = extent;
 
+	// Retrieve the swap chain images
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
 	swapChainImages.resize(imageCount);
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
@@ -387,7 +443,256 @@ void App::createImageViews() {
 	LOG_INFO("[VULKAN]: Image views created");
 }
 
+// The render pass tells Vulkan about our framebuffer attachments, color and depth buffers, number
+// of samples, and how to handle the content throughout rendering operations.
+void App::createRenderPass() {
+	VkAttachmentDescription colorAttachment{};
+	colorAttachment.format = swapChainImageFormat;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // Single color buffer attachment
+	// Clear color and depth buffers before rendering
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	// Store the contents after rendering
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	// Dont care about stencil buffers
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	// Layout transition:
+	// LAYOUT_UNDEFINED (before rendering) -> LAYOUT_PRESENT_SRC_KHR (after rendering)
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	// Subpasses: A render pass can have multiple subpasses. Each subpass references one or more of
+	// the attachments that we've described in the render pass. It also describes the layout
+	// transitions that need to take place during the subpass.
+
+	// We just create 1 subpass which uses the color attachment
+	VkAttachmentReference colorAttachmentRef{};
+	// We only have 1 color attachment (index 0) so we reference that
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass{};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+
+	// Finally create the render pass
+	VkRenderPassCreateInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = 1;
+	renderPassInfo.pAttachments = &colorAttachment;
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+
+	VkResult result = vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to create render pass");
+	LOG_INFO("[VULKAN]: Render pass created");
+}
+
+// Create the graphics pipeline. The graphics pipeline is the sequence of operations that take the
+// vertices and textures of your meshes all the way to the pixels in the render targets.
+//
+// Here we configure these:
+// 1. Shader pipeline
+// 2. Vertex layout info (glVertexAttribPointer)
+// 3. Vertex assembly (Triangles, Triangle strips, Lines)
+// 4. Viewport and Scissor
+// 5. Rasterizer (render as FILL, LINES, POINTS), lineWidth, depth bias, etc.
+// 6. Multisampling (for Anti-Aliasing)
+// 7. Color attachments (For global state as well as per framebuffer)
+// 8. Pipeline creation (Phew, finally)
+//
+void App::createGraphicsPipeline() {
+	// Read the SPIR-V bytecode from the files
+	auto vertShaderCode = readFile("shaders/vert.spv");
+	auto fragShaderCode = readFile("shaders/frag.spv");
+
+	// Create shader modules from the bytecode
+	VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+	VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+	// Information about the 2 shader modules (we'll use them as vertex and fragment shaders)
+	VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertShaderStageInfo.module = vertShaderModule;
+	vertShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragShaderStageInfo.module = fragShaderModule;
+	fragShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+	// The format of the vertex data. This is equivalent to OpenGL's glVertexAttribPointer
+	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertexInputInfo.vertexBindingDescriptionCount = 0;
+	vertexInputInfo.pVertexBindingDescriptions = nullptr;
+	vertexInputInfo.vertexAttributeDescriptionCount = 0;
+	vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+	// How to assemble the primitives (polygons, lines for wireframe, points)
+	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	// POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP
+	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+	// Viewport defines the region of the framebuffer we will render to.
+	VkViewport viewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = static_cast<float>(swapChainExtent.width);
+	viewport.height = static_cast<float>(swapChainExtent.height);
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	// "While viewports define the transformation from the image to the framebuffer, scissor
+	// rectangles define in which regions pixels will actually be stored. Any pixels outside the
+	// scissor rectangles will be discarded by the rasterizer."
+	VkRect2D scissor{};
+	scissor.offset = {0, 0};
+	scissor.extent = swapChainExtent;
+
+	// Here we are setting viewport and scissor statically during pipeline creation. We also
+	// could've specified them dynamically during render time.
+	VkPipelineViewportStateCreateInfo viewportState{};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &viewport;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &scissor;
+
+	// The rasterizer is responsible for turning the geometry into fragments to be filled
+	VkPipelineRasterizationStateCreateInfo rasterizer{};
+	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterizer.depthClampEnable = VK_FALSE; // This could be useful in shadow mapping
+	rasterizer.rasterizerDiscardEnable = VK_FALSE;
+	// You can set the following as: VK_POLYGON_MODE_FILL, VK_POLYGON_MODE_LINE,
+	// VK_POLYGON_MODE_POINT
+	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+	rasterizer.lineWidth = 1.0f;
+	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer.depthBiasEnable = VK_FALSE;
+
+	// Multisampling (for AA). Disabling it for now.
+	VkPipelineMultisampleStateCreateInfo multisampling{};
+	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampling.sampleShadingEnable = VK_FALSE;
+	multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+	// Color blending:
+	// The first struct, VkPipelineColorBlendAttachmentState contains the configuration per attached
+	// framebuffer
+	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+										  VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	colorBlendAttachment.blendEnable = VK_FALSE;
+
+	// and the second struct, VkPipelineColorBlendStateCreateInfo contains the global
+	// color blending settings
+	VkPipelineColorBlendStateCreateInfo colorBlending{};
+	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.attachmentCount = 1;
+	colorBlending.pAttachments = &colorBlendAttachment;
+
+	// Pipeline layout creation info
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = 0;	  // Optional
+	pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
+
+	VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to create pipeline layout");
+	LOG_INFO("[VULKAN]: Pipeline layout created");
+
+	// Finally, the pipeline creation info
+	VkGraphicsPipelineCreateInfo pipelineInfo{};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.stageCount = 2;
+	pipelineInfo.pStages = shaderStages;
+	pipelineInfo.pVertexInputState = &vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &rasterizer;
+	pipelineInfo.pMultisampleState = &multisampling;
+	pipelineInfo.pDepthStencilState = nullptr; // Optional
+	pipelineInfo.pColorBlendState = &colorBlending;
+	// pipelineInfo.pDynamicState = &dynamicState; // If dynamic state for viewport and scissor used
+	pipelineInfo.layout = pipelineLayout;
+	pipelineInfo.renderPass = renderPass;
+	pipelineInfo.subpass = 0;
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
+	pipelineInfo.basePipelineIndex = -1;			  // Optional
+
+	result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+									   &graphicsPipeline);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to create graphics pipeline");
+	LOG_INFO("[VULKAN]: Graphics pipeline created");
+
+	// Delete the temporary shader module objects
+	vkDestroyShaderModule(device, fragShaderModule, nullptr);
+	vkDestroyShaderModule(device, vertShaderModule, nullptr);
+}
+
+// Create a shader module from the shader code.
+VkShaderModule App::createShaderModule(const std::vector<char> &code) {
+	VkShaderModuleCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.codeSize = code.size();
+	createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+
+	VkShaderModule shaderModule;
+	VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to create shader module");
+	LOG_INFO("[VULKAN]: Shader module created");
+	return shaderModule;
+}
+
+// The attachments specified during render pass creation are bound by wrapping them into a
+// VkFramebuffer object. A framebuffer object references all of the VkImageView objects that
+// represent the attachments.
+
+// we have to create a framebuffer for all of the images in the swap chain and use the one that
+// corresponds to the retrieved image at drawing time.
+void App::createFramebuffers() {
+	swapChainFramebuffers.resize(swapChainImageViews.size());
+	for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+		VkImageView attachments[] = {swapChainImageViews[i]};
+
+		VkFramebufferCreateInfo framebufferInfo{};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.width = swapChainExtent.width;
+		framebufferInfo.height = swapChainExtent.height;
+		framebufferInfo.layers = 1;
+
+		VkResult result =
+			vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]);
+		if (result != VK_SUCCESS)
+			throw std::runtime_error("Failed to create framebuffer");
+	}
+
+	LOG_INFO("[VULKAN]: Framebuffers created");
+}
+
 void App::cleanup() {
+	for (auto framebuffer : swapChainFramebuffers)
+		vkDestroyFramebuffer(device, framebuffer, nullptr);
+	vkDestroyPipeline(device, graphicsPipeline, nullptr);
+	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+	vkDestroyRenderPass(device, renderPass, nullptr);
 	for (auto imageView : swapChainImageViews)
 		vkDestroyImageView(device, imageView, nullptr);
 	vkDestroySwapchainKHR(device, swapChain, nullptr);
@@ -396,4 +701,21 @@ void App::cleanup() {
 	vkDestroyInstance(instance, nullptr);
 	glfwDestroyWindow(window);
 	glfwTerminate();
+}
+
+std::vector<char> App::readFile(const std::string &filename) {
+	std::ifstream file(filename, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		throw std::runtime_error("Failed to open file: " + filename);
+	}
+
+	size_t fileSize = static_cast<size_t>(file.tellg());
+	std::vector<char> buffer(fileSize);
+
+	file.seekg(0);
+	file.read(buffer.data(), fileSize);
+	file.close();
+
+	return buffer;
 }

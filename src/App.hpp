@@ -4,8 +4,9 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <string>
 
-const uint32_t WINDOW_WIDTH = 800, WINDOW_HEIGHT = 600;
+const uint32_t WINDOW_WIDTH = 1000, WINDOW_HEIGHT = 600;
 
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphicsFamily;
@@ -34,6 +35,11 @@ class App {
 	VkExtent2D swapChainExtent;
 	std::vector<VkImage> swapChainImages;
 	std::vector<VkImageView> swapChainImageViews;
+	std::vector<VkFramebuffer> swapChainFramebuffers;
+
+	VkRenderPass renderPass;
+	VkPipelineLayout pipelineLayout;
+	VkPipeline graphicsPipeline;
 
   public:
 	App();
@@ -60,6 +66,13 @@ class App {
 	void createSwapChain();
 
 	void createImageViews();
+	void createRenderPass();
+	void createGraphicsPipeline();
+	void createFramebuffers();
+
+	VkShaderModule createShaderModule(const std::vector<char> &code);
 
 	void cleanup();
+
+	static std::vector<char> readFile(const std::string &filename);
 };
