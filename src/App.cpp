@@ -17,36 +17,36 @@ const bool enableValidationLayers = true;
 #endif
 
 App::App() {
-	// 1. Initialize the window
+	//* 1. Initialize the window
 	initVulkan();
-	// 2. Create the Vulkan instance. This contains the information about the application as well as
-	//    the required extensions and validation layers.
+	//* 2. Create the Vulkan instance. This contains the information about the application as well
+	//*    as the required extensions and validation layers.
 	createInstance();
-	// 3. Creates the window surface. This is the connection between the Vulkan instance and the
-	// 	  window system. It is handled by GLFW.
+	//* 3. Creates the window surface. This is the connection between the Vulkan instance and the
+	//*    window system. It is handled by GLFW.
 	createSurface();
-	// 4. Select a physical device (GPU) that supports the features we need. It uses the function
-	// 	  isDeviceSuitable. isDeviceSuitable checks if the required queues (graphics and
-	//    presentation queues), extensions (swapchain) are available, and if the swapchain itself is
-	//    adequate.
+	//* 4. Select a physical device (GPU) that supports the features we need. It uses the function
+	//*    isDeviceSuitable. isDeviceSuitable checks if the required queues (graphics and
+	//*    presentation queues), extensions (swapchain) are available, and if the swapchain itself
+	//*    is adequate.
 	pickPhysicalDevice();
-	// 5. Create the logical device. The logical device is the connection between the application
-	// 	  and the physical device. Here we specify the queues, features and validation layers we
-	//    want to use.
+	//* 5. Create the logical device. The logical device is the connection between the application
+	//*    and the physical device. Here we specify the queues, features and validation layers we
+	//*    want to use.
 	createLogicalDevice();
-	// 6. Create the swap chain. We have 3 functions, chooseSwapSurfaceFormat,
-	//    chooseSwapPresentMode, and chooseSwapExtent to choose the swapchain details we want from
-	//    the list of available choices.
-	//    After that we store the swapchain details and retrieve the swapchain images.
+	//* 6. Create the swap chain. We have 3 functions, chooseSwapSurfaceFormat,
+	//*    chooseSwapPresentMode, and chooseSwapExtent to choose the swapchain details we want from
+	//*    the list of available choices.
+	//*    After that we store the swapchain details and retrieve the swapchain images.
 	createSwapChain();
-	// 7. Create the image views. Image views specify how to access the image (in this case
-	//    swapchain images) and which part of the image to access.
+	//* 7. Create the image views. Image views specify how to access the image (in this case
+	//*    swapchain images) and which part of the image to access.
 	createImageViews();
-	// 8. Create the Render pass. This tells vulkan about our framebuffer attachments, color and
-	// depth buffers, etc.
+	//* 8. Create the Render pass. This tells vulkan about our framebuffer attachments, color and
+	//*    depth buffers, etc.
 	createRenderPass();
-	// 9. Create the graphics pipeline. This stores the complete sequence of operations that tell
-	// Vulkan how to go from a set of vertex data to the final output on the screen
+	//* 9. Create the graphics pipeline. This stores the complete sequence of operations that tell
+	//*    Vulkan how to go from a set of vertex data to the final output on the screen
 	createGraphicsPipeline();
 }
 
@@ -58,7 +58,11 @@ void App::run() {
 	}
 }
 
-// Creates the GLFW window
+/*
+ : ------------------------------------------------------------------------------------------------
+ : MARK:									Window Creation
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::initVulkan() {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -66,7 +70,8 @@ void App::initVulkan() {
 	LOG_INFO("[VULKAN]: Window created");
 }
 
-// Check if the requested validation layers are available. These are provided by LunarG
+//: Check if the requested validation layers are available. These are provided by LunarG
+
 bool App::checkValidationLayerSupport() {
 	uint32_t layerCount;
 	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -87,7 +92,12 @@ bool App::checkValidationLayerSupport() {
 	return true;
 }
 
-// Vulkan instance creation
+/*
+ : ------------------------------------------------------------------------------------------------
+ : MARK:							Vulkan instance creation
+ :  	General application information, along with the required extensions and validation layers
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createInstance() {
 	if (enableValidationLayers && !checkValidationLayerSupport())
 		throw std::runtime_error("Validation layers requested, but not available!");
@@ -127,18 +137,33 @@ void App::createInstance() {
 	LOG_INFO("[VULKAN]: Vulkan instance created");
 }
 
-// The window surface is the connection between the Vulkan instance and the window system.
+/*
+ : ------------------------------------------------------------------------------------------------
+ : MARK: 							Surface creation
+ :
+ :  The surface is the connection between the Vulkan instance and the window system. GLFW handles
+ :  this as it is platform specific.
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createSurface() {
 	if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create window surface!");
 }
 
-// Select a physical device (GPU) that supports the features we need.
+/*
+ : ------------------------------------------------------------------------------------------------
+ : 	MARK:							Pick Physical Device
+ :
+ :  The physical device is the actual GPU. We need to select a physical device that supports the
+ :  required features. We check if the device supports the required queue families, extensions,
+ :  and swap chain.
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::pickPhysicalDevice() {
 	physicalDevice = VK_NULL_HANDLE;
 
-	// This pattern of querying the number of devices and then querying the devices themselves is
-	// common in Vulkan.
+	//! This pattern of querying the number of devices and then querying the devices themselves is
+	//! common in Vulkan.
 	uint32_t deviceCount = 0;
 	vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 	if (deviceCount == 0)
@@ -166,12 +191,14 @@ void App::pickPhysicalDevice() {
 	LOG_TRACE("[VULKAN]: Physical device: {}", deviceProperties.deviceName);
 }
 
-// Check if the given physical device supports the required features.
+//: Check if the given physical device supports the required features.
 bool App::isDeviceSuitable(VkPhysicalDevice device) {
+	// Get the device properties and features
 	VkPhysicalDeviceProperties deviceProperties;
 	VkPhysicalDeviceFeatures deviceFeatures;
 	vkGetPhysicalDeviceProperties(device, &deviceProperties);
 	vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
 	// Check if the device supports the required queue families, extensions, and swap chain
 	QueueFamilyIndices indices = findQueueFamilies(device);
 	bool extensionsSupported = checkDeviceExtensionSupport(device);
@@ -184,7 +211,7 @@ bool App::isDeviceSuitable(VkPhysicalDevice device) {
 	return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-// Find the queue families supported.
+//: Find the queue families supported.
 QueueFamilyIndices App::findQueueFamilies(VkPhysicalDevice device) {
 	QueueFamilyIndices indices;
 
@@ -210,7 +237,7 @@ QueueFamilyIndices App::findQueueFamilies(VkPhysicalDevice device) {
 	return indices;
 }
 
-// Check if the device supports the required extensions (swap chain).
+//: Check if the device supports the required extensions (swap chain).
 bool App::checkDeviceExtensionSupport(VkPhysicalDevice device) {
 	uint32_t extensionCount;
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -225,16 +252,26 @@ bool App::checkDeviceExtensionSupport(VkPhysicalDevice device) {
 	return requiredExtensions.empty();
 }
 
-// Create the logical device. The logical device is the connection between the application and the
-// physical device.
+/*
+ : ------------------------------------------------------------------------------------------------
+ : 	MARK:							Create Logical Device
+ :
+ :  Think of physical device as the 'class', and the logical device as an instance of that class,
+ :  with certain specified features and extensions enabled. Multiple apps have to share the
+ :  physical device, but each app can have its own logical device with their own configuration of
+ :  the physical device as they require.
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createLogicalDevice() {
 	QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
 	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+
 	// The graphics and presentation queues might be the same. So we use a set to ensure uniqueness.
 	std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(),
 											  indices.presentFamily.value()};
 
+	// We have to supply a list of queues while creating the logical device.
 	float queuePriority = 1.0f;
 	for (uint32_t queueFamily : uniqueQueueFamilies) {
 		VkDeviceQueueCreateInfo queueCreateInfo{};
@@ -272,7 +309,7 @@ void App::createLogicalDevice() {
 	vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
-// Query the swap chain support details.
+//: Query the swap chain support details.
 SwapChainSupportDetails App::querySwapChainSupport(VkPhysicalDevice device) {
 	SwapChainSupportDetails details;
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
@@ -328,12 +365,14 @@ App::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresent
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-// The swap extent is the size (resolution) of the swap surface images.
+//: The swap extent is the size (resolution) of the swap surface images.
 VkExtent2D App::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
-	// Some window managers allow us to specify the resolution of the swap chain images.
-	// They do this by setting the width and height to the max value of uint32_t
-	// If that is the case, then we have to specify the width and height ourselves.
-	// Otherwise, we use the width and height specified by the window manager.
+	/*
+	 * Some window managers allow us to specify the resolution of the swap chain images.
+	 * They do this by setting the width and height to the max value of uint32_t
+	 * If that is the case, then we have to specify the width and height ourselves. Otherwise, we
+	 * use the width and height specified by the window manager.
+	 */
 	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
 		return capabilities.currentExtent;
 
@@ -353,7 +392,14 @@ VkExtent2D App::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
 	return actualExtent;
 }
 
-// Create the swap chain.
+/*
+ : ------------------------------------------------------------------------------------------------
+ :	 MARK:                               Create Swap Chain
+ :
+ :  Swapchain is a sequence of images owned by the GPU. We request images from the swap chain to be
+ :  used as render targets, and after rendering, we return them back to the swap chain for display.
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createSwapChain() {
 	SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
 	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -417,7 +463,14 @@ void App::createSwapChain() {
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
 }
 
-// Image views specify how to access the image and which part of the image to access.
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Create Image View
+ :
+ :  VkImageView object helps select only part (array or mip) of the VkImage. We have to create image
+ :  views for the swapchain images.
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createImageViews() {
 	swapChainImageViews.resize(swapChainImages.size());
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -443,8 +496,14 @@ void App::createImageViews() {
 	LOG_INFO("[VULKAN]: Image views created");
 }
 
-// The render pass tells Vulkan about our framebuffer attachments, color and depth buffers, number
-// of samples, and how to handle the content throughout rendering operations.
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Create Render Pass
+ :
+ :  The render pass tells Vulkan about our framebuffer attachments, color and depth buffers, number
+ :  of samples, and how to handle the content throughout rendering operations.
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createRenderPass() {
 	VkAttachmentDescription colorAttachment{};
 	colorAttachment.format = swapChainImageFormat;
@@ -461,9 +520,11 @@ void App::createRenderPass() {
 	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-	// Subpasses: A render pass can have multiple subpasses. Each subpass references one or more of
-	// the attachments that we've described in the render pass. It also describes the layout
-	// transitions that need to take place during the subpass.
+	/*
+	 * Subpasses: A render pass can have multiple subpasses. Each subpass references one or more of
+	 * the attachments that we've described in the render pass. It also describes the layout
+	 * transitions that need to take place during the subpass.
+	 */
 
 	// We just create 1 subpass which uses the color attachment
 	VkAttachmentReference colorAttachmentRef{};
@@ -490,20 +551,26 @@ void App::createRenderPass() {
 	LOG_INFO("[VULKAN]: Render pass created");
 }
 
-// Create the graphics pipeline. The graphics pipeline is the sequence of operations that take the
-// vertices and textures of your meshes all the way to the pixels in the render targets.
-//
-// Here we configure these:
-// 1. Shader pipeline
-// 2. Vertex layout info (glVertexAttribPointer)
-// 3. Vertex assembly (Triangles, Triangle strips, Lines)
-// 4. Viewport and Scissor
-// 5. Rasterizer (render as FILL, LINES, POINTS), lineWidth, depth bias, etc.
-// 6. Multisampling (for Anti-Aliasing)
-// 7. Color attachments (For global state as well as per framebuffer)
-// 8. Pipeline creation (Phew, finally)
-//
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Graphics Pipeline!
+ :
+ : The graphics pipeline is the sequence of operations that take the
+ : vertices and textures of your meshes all the way to the pixels in the render targets.
+ :
+ : Here we configure these:
+ : 1. Shader pipeline
+ : 2. Vertex layout info (glVertexAttribPointer)
+ : 3. Vertex assembly (Triangles, Triangle strips, Lines)
+ : 4. Viewport and Scissor
+ : 5. Rasterizer (render as FILL, LINES, POINTS), lineWidth, depth bias, etc.
+ : 6. Multisampling (for Anti-Aliasing)
+ : 7. Color attachments (For global state as well as per framebuffer)
+ : 8. Pipeline creation (Phew, finally) :
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createGraphicsPipeline() {
+	//* Shader stuff:
 	// Read the SPIR-V bytecode from the files
 	auto vertShaderCode = readFile("shaders/vert.spv");
 	auto fragShaderCode = readFile("shaders/frag.spv");
@@ -527,6 +594,7 @@ void App::createGraphicsPipeline() {
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
+	//* Vertex data format
 	// The format of the vertex data. This is equivalent to OpenGL's glVertexAttribPointer
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -535,6 +603,7 @@ void App::createGraphicsPipeline() {
 	vertexInputInfo.vertexAttributeDescriptionCount = 0;
 	vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
+	//* Vertex Assembler
 	// How to assemble the primitives (polygons, lines for wireframe, points)
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
 	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -542,6 +611,7 @@ void App::createGraphicsPipeline() {
 	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	inputAssembly.primitiveRestartEnable = VK_FALSE;
 
+	//* Viewport and Scissor
 	// Viewport defines the region of the framebuffer we will render to.
 	VkViewport viewport{};
 	viewport.x = 0.0f;
@@ -567,6 +637,7 @@ void App::createGraphicsPipeline() {
 	viewportState.scissorCount = 1;
 	viewportState.pScissors = &scissor;
 
+	//* Rasterizer
 	// The rasterizer is responsible for turning the geometry into fragments to be filled
 	VkPipelineRasterizationStateCreateInfo rasterizer{};
 	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -580,15 +651,16 @@ void App::createGraphicsPipeline() {
 	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rasterizer.depthBiasEnable = VK_FALSE;
 
+	//* Multisampling
 	// Multisampling (for AA). Disabling it for now.
 	VkPipelineMultisampleStateCreateInfo multisampling{};
 	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisampling.sampleShadingEnable = VK_FALSE;
 	multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-	// Color blending:
-	// The first struct, VkPipelineColorBlendAttachmentState contains the configuration per attached
-	// framebuffer
+	//* Color blending:
+	// The first struct, VkPipelineColorBlendAttachmentState contains the configuration per
+	// attached framebuffer
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
 										  VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -602,7 +674,7 @@ void App::createGraphicsPipeline() {
 	colorBlending.attachmentCount = 1;
 	colorBlending.pAttachments = &colorBlendAttachment;
 
-	// Pipeline layout creation info
+	//* Pipeline layout creation info
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 0;	  // Optional
@@ -613,7 +685,7 @@ void App::createGraphicsPipeline() {
 		throw std::runtime_error("Failed to create pipeline layout");
 	LOG_INFO("[VULKAN]: Pipeline layout created");
 
-	// Finally, the pipeline creation info
+	//* Finally, the pipeline creation info
 	VkGraphicsPipelineCreateInfo pipelineInfo{};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 	pipelineInfo.stageCount = 2;
@@ -643,7 +715,7 @@ void App::createGraphicsPipeline() {
 	vkDestroyShaderModule(device, vertShaderModule, nullptr);
 }
 
-// Create a shader module from the shader code.
+//: Create a shader module from the shader code.
 VkShaderModule App::createShaderModule(const std::vector<char> &code) {
 	VkShaderModuleCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -658,12 +730,18 @@ VkShaderModule App::createShaderModule(const std::vector<char> &code) {
 	return shaderModule;
 }
 
-// The attachments specified during render pass creation are bound by wrapping them into a
-// VkFramebuffer object. A framebuffer object references all of the VkImageView objects that
-// represent the attachments.
-
-// we have to create a framebuffer for all of the images in the swap chain and use the one that
-// corresponds to the retrieved image at drawing time.
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Framebuffer creation
+ :
+ : The attachments specified during render pass creation are bound by wrapping them into a
+ : VkFramebuffer object. A framebuffer object references all of the VkImageView objects that
+ : represent the attachments.
+ :
+ : we have to create a framebuffer for all of the images in the swap chain and use the one that
+ : corresponds to the retrieved image at drawing time. :
+ : ------------------------------------------------------------------------------------------------
+*/
 void App::createFramebuffers() {
 	swapChainFramebuffers.resize(swapChainImageViews.size());
 	for (size_t i = 0; i < swapChainImageViews.size(); i++) {
@@ -687,6 +765,7 @@ void App::createFramebuffers() {
 	LOG_INFO("[VULKAN]: Framebuffers created");
 }
 
+//: Cleanup all the resources
 void App::cleanup() {
 	for (auto framebuffer : swapChainFramebuffers)
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
