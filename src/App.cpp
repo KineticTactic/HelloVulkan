@@ -7,6 +7,15 @@
 #include <set>
 #include <limits>
 
+/*
+ !       :::      .::....    ::: :::      :::  .    :::.   :::.    :::.
+ !       ';;,   ,;;;' ;;     ;;; ;;;      ;;; .;;,. ;;`;;  `;;;;,  `;;;
+ !        \[[  .[[/  [['     [[[ [[[      [[[[[/'  ,[[ '[[,  [[[[[. '[[
+ !         Y$c.$$"   $$      $$$ $$'     _$$$$,   c$$$cc$$$c $$$ "Y$c$$
+ !          Y88P     88    .d888o88oo,.__"888"88o, 888   888,888    Y88
+ !           MP       "YmmMMMM""""""YUMMM MMM "MMP"YMM   ""` MMM     YM
+*/
+
 const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
 const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
@@ -48,6 +57,12 @@ App::App() {
 	//* 9. Create the graphics pipeline. This stores the complete sequence of operations that tell
 	//*    Vulkan how to go from a set of vertex data to the final output on the screen
 	createGraphicsPipeline();
+
+	createFramebuffers();
+	createCommandPool();
+	createCommandBuffer();
+	createSyncObjects();
+	mainLoop();
 }
 
 App::~App() { cleanup(); }
@@ -545,6 +560,22 @@ void App::createRenderPass() {
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
 
+	/*
+	 * Subpass Dependencies:
+	 * Too big to explain. read from here
+	 * https://vulkan-tutorial.com/Drawing_a_triangle/Drawing/Rendering_and_presentation#page_Subpass-dependencies
+	 */
+	VkSubpassDependency dependency{};
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.srcAccessMask = 0;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	renderPassInfo.dependencyCount = 1;
+	renderPassInfo.pDependencies = &dependency;
+
 	VkResult result = vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
 	if (result != VK_SUCCESS)
 		throw std::runtime_error("Failed to create render pass");
@@ -739,7 +770,7 @@ VkShaderModule App::createShaderModule(const std::vector<char> &code) {
  : represent the attachments.
  :
  : we have to create a framebuffer for all of the images in the swap chain and use the one that
- : corresponds to the retrieved image at drawing time. :
+ : corresponds to the retrieved image at drawing time.
  : ------------------------------------------------------------------------------------------------
 */
 void App::createFramebuffers() {
@@ -765,8 +796,231 @@ void App::createFramebuffers() {
 	LOG_INFO("[VULKAN]: Framebuffers created");
 }
 
-//: Cleanup all the resources
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Command Pool
+ :
+ : Command pools are used to allocate command buffers. Idk what else
+ : ------------------------------------------------------------------------------------------------
+*/
+void App::createCommandPool() {
+	QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+
+	VkResult result = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to create command pool");
+	LOG_INFO("[VULKAN]: Command pool created");
+}
+
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Command Buffer
+ :
+ :  Command buffers are objects used to record commands which can be submitted to a queue for
+ :  execution.
+ : ------------------------------------------------------------------------------------------------
+*/
+void App::createCommandBuffer() {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = commandPool;
+	// Primary buffers are submitted to queues for execution.
+	// Secondary buffers are meant to be called from primary buffers.
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 1;
+
+	VkResult result = vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate command buffer");
+	LOG_INFO("[VULKAN]: Command buffer created");
+}
+
+//: MARK: Record commands
+
+void App::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+	// Begin recording
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = 0;				  // Optional
+	beginInfo.pInheritanceInfo = nullptr; // Optional
+
+	VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to begin recording command buffer");
+	LOG_INFO("[VULKAN]: Command buffer recording started");
+
+	// Render pass information
+	VkRenderPassBeginInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassInfo.renderPass = renderPass;
+	renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+	renderPassInfo.renderArea.offset = {0, 0};
+	renderPassInfo.renderArea.extent = swapChainExtent;
+
+	// Setting the clear color
+	VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+	renderPassInfo.clearValueCount = 1;
+	renderPassInfo.pClearValues = &clearColor;
+
+	// Begin the render pass
+	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	//* Drawing commands from here:
+	// Bind our graphics pipeline
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+	// Dynamic viewport and scissor here if needed
+
+	// Actual draw command (underwhelming, I know)
+	vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+	// End the render pass
+	vkCmdEndRenderPass(commandBuffer);
+
+	// End recording
+	result = vkEndCommandBuffer(commandBuffer);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to record command buffer");
+	LOG_INFO("[VULKAN]: Command buffer recording ended");
+}
+
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Sync Objects
+ :
+ :  Semaphores are used to synchronize GPU operations between the various queues. Fences are used to
+ :  synchronize CPU operations with GPU operations. "Signalling" a semaphore or a fence means that
+ :  the GPU has finished executing the command buffer.
+ :
+ :  Here we use semaphores to:
+ :  1. Signal that an image is available for rendering (after which we can start drawing).
+ :  2. Signal that rendering has finished (after which we can present the image to the window).
+ :
+ :  We use fences to wait for the frame to finish before starting to render the next one.
+ : ------------------------------------------------------------------------------------------------
+*/
+void App::createSyncObjects() {
+	VkSemaphoreCreateInfo semaphoreInfo{};
+	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	// Since we are using the fence to wait for the frame to finish, we start it in the signaled
+	// state. Otherwise the fence will be in the unsignaled state and the vkWaitForFences function
+	// will wait forever.
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) !=
+			VK_SUCCESS ||
+		vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) !=
+			VK_SUCCESS ||
+		vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create synchronization objects");
+	LOG_INFO("[VULKAN]: Synchronization objects created");
+}
+
+//: MARK: Main loop
+
+void App::mainLoop() {
+	while (!glfwWindowShouldClose(window)) {
+		glfwPollEvents();
+		drawFrame();
+	}
+
+	// Wait for the device to finish before cleaning up
+	vkDeviceWaitIdle(device);
+}
+
+/*
+ : ------------------------------------------------------------------------------------------------
+ :  MARK:								Draw Frame
+ :
+ :  At a high level, rendering a frame in Vulkan consists of a common set of steps:
+ :  1. Wait for the previous frame to finish
+ :  2. Acquire an image from the swap chain
+ :  3. Record a command buffer which draws the scene onto that image
+ :  4. Submit the recorded command buffer
+ :  5. Present the swap chain image
+ : ------------------------------------------------------------------------------------------------
+*/
+void App::drawFrame() {
+	// 1. Wait for the previous frame to finish
+	vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+	vkResetFences(device, 1, &inFlightFence);
+
+	// 2. Acquire an image from the swap chain
+	uint32_t imageIndex;
+	// The imageAvailableSemaphore is signalled when the image is available for rendering
+	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE,
+						  &imageIndex);
+
+	// 3. Record a command buffer which draws the scene onto that image
+	vkResetCommandBuffer(commandBuffer, 0);
+	// The command buffer contains our rendering code. We submit it to the graphics queue next.
+	recordCommandBuffer(commandBuffer, imageIndex);
+
+	// 4. Submit the recorded command buffer
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+	VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+	// The waitStages array specifies the stages at which the semaphore waits. We want to wait at
+	// the color attachment stage before executing the command buffer. This means that the vertex
+	// shader and other early stages can already start executing while the image is still not
+	// available.
+	VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+	submitInfo.waitSemaphoreCount = 1;
+	// Wait until imageAvailableSemaphore is signalled. We can start drawing after that.
+	submitInfo.pWaitSemaphores = waitSemaphores;
+	submitInfo.pWaitDstStageMask = waitStages;
+
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	// Once the rendering is done, we signal the renderFinishedSemaphore. After that, we can
+	// present the image to the window.
+	VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	// So to summarize, the queue will wait for the imageAvailableSemaphore to be signalled before
+	// executing the rendering commands. Once the rendering is done, it will signal the
+	// renderFinishedSemaphore.
+	VkResult result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to submit draw command buffer");
+	LOG_INFO("[VULKAN]: Command buffer submitted");
+
+	// 5. Present the swap chain image
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	// Wait for the renderFinishedSemaphore to be signalled before presenting the image.
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+
+	// List of swap chains to present images to. We only have 1 swapchain.
+	VkSwapchainKHR swapChains[] = {swapChain};
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+
+	result = vkQueuePresentKHR(presentQueue, &presentInfo);
+	if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to present swap chain image");
+	LOG_INFO("[VULKAN]: Swap chain image presented");
+}
+
+//: MARK: Cleanup
 void App::cleanup() {
+	vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+	vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+	vkDestroyFence(device, inFlightFence, nullptr);
+	vkDestroyCommandPool(device, commandPool, nullptr);
 	for (auto framebuffer : swapChainFramebuffers)
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
