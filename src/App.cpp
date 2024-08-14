@@ -25,6 +25,8 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
+//: MARK: Main Sequence
+
 App::App() {
 	//* 1. Initialize the window
 	initVulkan();
@@ -57,11 +59,20 @@ App::App() {
 	//* 9. Create the graphics pipeline. This stores the complete sequence of operations that tell
 	//*    Vulkan how to go from a set of vertex data to the final output on the screen
 	createGraphicsPipeline();
-
+	//* 10. Create the framebuffers. The attachments specified during render pass creation are bound
+	//*     by wrapping them into a VkFramebuffer object. A framebuffer object references all of the
+	//*     VkImageView objects that represent the attachments.
 	createFramebuffers();
+	//* 11. Create the command pool. Command pools manage the memory that is used to store the
+	//*     buffers and command buffers are allocated from them.
 	createCommandPool();
+	//* 12. Create the command buffer. Command buffers are used to record commands that are sent to
+	//*     the GPU.
 	createCommandBuffer();
+	//* 13. Create the semaphores and fences. Semaphores are used to synchronize operations within
+	//*     the GPU and fences are used to synchronize the CPU with the GPU.
 	createSyncObjects();
+	//* 14. Start the main loop
 	mainLoop();
 }
 
