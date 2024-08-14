@@ -2,7 +2,15 @@ This is me learning vulkan from [https://vulkan-tutorial.com/](https://vulkan-tu
 
 The code is heavily documented (basically, I took notes for my own understanding).
 
-### Building the source code
+## Project journal
+
+### 14.08.2024: My very first Vulkan triangle!
+
+After 4 days of learning, and 925 lines of code, I finally got something on the screen.
+
+![Triangle](images/veryfirsttriangle.png)
+
+## Building the source code
 
 ```bash
 # Meta build (any of these)
