@@ -56,6 +56,8 @@ class App {
 	~App();
 	void run();
 
+	bool framebufferResized = false;
+
   private:
 	void initVulkan();
 	bool checkValidationLayerSupport();
@@ -74,6 +76,8 @@ class App {
 	chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
 	void createSwapChain();
+	void recreateSwapChain();
+	void cleanupSwapChain();
 
 	void createImageViews();
 	void createRenderPass();
@@ -94,4 +98,5 @@ class App {
 	void cleanup();
 
 	static std::vector<char> readFile(const std::string &filename);
+	static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
 };

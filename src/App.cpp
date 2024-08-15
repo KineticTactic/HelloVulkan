@@ -2,6 +2,7 @@
 #include "GLFW/glfw3.h"
 #include "Log.hpp"
 #include "vulkan/vulkan_core.h"
+#include <cstdint>
 #include <fstream>
 #include <stdexcept>
 #include <set>
@@ -93,6 +94,8 @@ void App::initVulkan() {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Vulkan window", nullptr, nullptr);
+	glfwSetWindowUserPointer(window, this);
+	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 	LOG_INFO("[VULKAN]: Window created");
 }
 
@@ -420,7 +423,7 @@ VkExtent2D App::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
 
 /*
  : ------------------------------------------------------------------------------------------------
- :	 MARK:                               Create Swap Chain
+ :	 MARK:                               Swap Chain
  :
  :  Swapchain is a sequence of images owned by the GPU. We request images from the swap chain to be
  :  used as render targets, and after rendering, we return them back to the swap chain for display.
@@ -489,9 +492,35 @@ void App::createSwapChain() {
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
 }
 
+void App::recreateSwapChain() {
+	// Pause when window minimized
+	int width = 0, height = 0;
+	glfwGetFramebufferSize(window, &width, &height);
+	while (width == 0 || height == 0) {
+		glfwGetFramebufferSize(window, &width, &height);
+		glfwWaitEvents();
+	}
+
+	vkDeviceWaitIdle(device);
+
+	cleanupSwapChain();
+
+	createSwapChain();
+	createImageViews();
+	createFramebuffers();
+}
+
+void App::cleanupSwapChain() {
+	for (auto framebuffer : swapChainFramebuffers)
+		vkDestroyFramebuffer(device, framebuffer, nullptr);
+	for (auto imageView : swapChainImageViews)
+		vkDestroyImageView(device, imageView, nullptr);
+	vkDestroySwapchainKHR(device, swapChain, nullptr);
+}
+
 /*
  : ------------------------------------------------------------------------------------------------
- :  MARK:								Create Image View
+ :  MARK:								Image View
  :
  :  VkImageView object helps select only part (array or mip) of the VkImage. We have to create image
  :  views for the swapchain images.
@@ -524,7 +553,7 @@ void App::createImageViews() {
 
 /*
  : ------------------------------------------------------------------------------------------------
- :  MARK:								Create Render Pass
+ :  MARK:									Render Pass
  :
  :  The render pass tells Vulkan about our framebuffer attachments, color and depth buffers, number
  :  of samples, and how to handle the content throughout rendering operations.
@@ -655,29 +684,35 @@ void App::createGraphicsPipeline() {
 
 	//* Viewport and Scissor
 	// Viewport defines the region of the framebuffer we will render to.
-	VkViewport viewport{};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = static_cast<float>(swapChainExtent.width);
-	viewport.height = static_cast<float>(swapChainExtent.height);
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
+	// VkViewport viewport{};
+	// viewport.x = 0.0f;
+	// viewport.y = 0.0f;
+	// viewport.width = static_cast<float>(swapChainExtent.width);
+	// viewport.height = static_cast<float>(swapChainExtent.height);
+	// viewport.minDepth = 0.0f;
+	// viewport.maxDepth = 1.0f;
 
 	// "While viewports define the transformation from the image to the framebuffer, scissor
 	// rectangles define in which regions pixels will actually be stored. Any pixels outside the
 	// scissor rectangles will be discarded by the rasterizer."
-	VkRect2D scissor{};
-	scissor.offset = {0, 0};
-	scissor.extent = swapChainExtent;
+	// VkRect2D scissor{};
+	// scissor.offset = {0, 0};
+	// scissor.extent = swapChainExtent;
 
-	// Here we are setting viewport and scissor statically during pipeline creation. We also
-	// could've specified them dynamically during render time.
+	// Here we are setting viewport and scissor dynamically
 	VkPipelineViewportStateCreateInfo viewportState{};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewport;
 	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
+
+	//* Dynamic state (data is supplied at render time)
+	std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
+												 VK_DYNAMIC_STATE_SCISSOR};
+
+	VkPipelineDynamicStateCreateInfo dynamicState{};
+	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+	dynamicState.pDynamicStates = dynamicStates.data();
 
 	//* Rasterizer
 	// The rasterizer is responsible for turning the geometry into fragments to be filled
@@ -739,7 +774,7 @@ void App::createGraphicsPipeline() {
 	pipelineInfo.pMultisampleState = &multisampling;
 	pipelineInfo.pDepthStencilState = nullptr; // Optional
 	pipelineInfo.pColorBlendState = &colorBlending;
-	// pipelineInfo.pDynamicState = &dynamicState; // If dynamic state for viewport and scissor used
+	pipelineInfo.pDynamicState = &dynamicState; // If dynamic state for viewport and scissor used
 	pipelineInfo.layout = pipelineLayout;
 	pipelineInfo.renderPass = renderPass;
 	pipelineInfo.subpass = 0;
@@ -887,7 +922,20 @@ void App::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex
 	// Bind our graphics pipeline
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-	// Dynamic viewport and scissor here if needed
+	// Dynamic viewport and scissor
+	VkViewport viewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = static_cast<float>(swapChainExtent.width);
+	viewport.height = static_cast<float>(swapChainExtent.height);
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset = {0, 0};
+	scissor.extent = swapChainExtent;
+	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 	// Actual draw command (underwhelming, I know)
 	vkCmdDraw(commandBuffer, 3, 1, 0, 0);
@@ -970,13 +1018,24 @@ void App::mainLoop() {
 void App::drawFrame() {
 	// 1. Wait for the previous frame to finish
 	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-	vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 	// 2. Acquire an image from the swap chain
 	uint32_t imageIndex;
 	// The imageAvailableSemaphore is signalled when the image is available for rendering
-	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame],
-						  VK_NULL_HANDLE, &imageIndex);
+	VkResult result =
+		vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame],
+							  VK_NULL_HANDLE, &imageIndex);
+
+	// Handle if the swapchain is no longer adequate for presentation and needs to be recreated
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		recreateSwapChain();
+		return;
+	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+		throw std::runtime_error("failed to acquire swapchain image!");
+
+	// Only reset the fence once we are sure we are submitting work to the queue (i.e. swapchain
+	// doesnt have to be recreated)
+	vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 	// 3. Record a command buffer which draws the scene onto that image
 	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
@@ -1010,7 +1069,7 @@ void App::drawFrame() {
 	// So to summarize, the queue will wait for the imageAvailableSemaphore to be signalled before
 	// executing the rendering commands. Once the rendering is done, it will signal the
 	// renderFinishedSemaphore.
-	VkResult result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]);
+	result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]);
 	if (result != VK_SUCCESS)
 		throw std::runtime_error("Failed to submit draw command buffer");
 	LOG_INFO("[VULKAN]: Command buffer submitted");
@@ -1029,7 +1088,10 @@ void App::drawFrame() {
 	presentInfo.pImageIndices = &imageIndex;
 
 	result = vkQueuePresentKHR(presentQueue, &presentInfo);
-	if (result != VK_SUCCESS)
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+		framebufferResized = false;
+		recreateSwapChain();
+	} else if (result != VK_SUCCESS)
 		throw std::runtime_error("Failed to present swap chain image");
 	LOG_INFO("[VULKAN]: Swap chain image presented");
 
@@ -1044,14 +1106,10 @@ void App::cleanup() {
 		vkDestroyFence(device, inFlightFences[i], nullptr);
 	}
 	vkDestroyCommandPool(device, commandPool, nullptr);
-	for (auto framebuffer : swapChainFramebuffers)
-		vkDestroyFramebuffer(device, framebuffer, nullptr);
+	cleanupSwapChain();
 	vkDestroyPipeline(device, graphicsPipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 	vkDestroyRenderPass(device, renderPass, nullptr);
-	for (auto imageView : swapChainImageViews)
-		vkDestroyImageView(device, imageView, nullptr);
-	vkDestroySwapchainKHR(device, swapChain, nullptr);
 	vkDestroyDevice(device, nullptr);
 	vkDestroySurfaceKHR(instance, surface, nullptr);
 	vkDestroyInstance(instance, nullptr);
@@ -1074,4 +1132,9 @@ std::vector<char> App::readFile(const std::string &filename) {
 	file.close();
 
 	return buffer;
+}
+
+void App::framebufferResizeCallback(GLFWwindow *window, int width, int height) {
+	auto app = reinterpret_cast<App *>(glfwGetWindowUserPointer(window));
+	app->framebufferResized = true;
 }
